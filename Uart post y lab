@@ -1,0 +1,109 @@
+/******************************************************************************
+;Universidad del Valle de Guatemala
+;IE2023: Programacion de Microcontroladores
+;Antirebote.asm
+;Autor; Joao Santos
+;Proyecto UART
+;Hardware: Atemega328P
+;Creado: 22/04/2024
+;Ultima modificacion: 28/04/2024
+******************************************************************************/
+
+#define F_CPU 16000000UL
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <avr/io.h>
+
+void InitADC(void);
+void InitUART9600(void);
+void witetextUART(char* texto);
+volatile uint8_t buffer_ADC;
+volatile char bufferRX;
+volatile uint8_t buffer_RX_B;
+
+int main(void)
+{
+	cli();
+	DDRB = 0xFF;
+	PORTB = 0;
+	
+	InitUART9600();
+	InitADC();
+	sei();
+	
+	witetextUART("Che queres leer el potenciometro o el ASCII? \n11)Potenciometro \n22)ASCII");
+	
+    while (1) {
+		ADCSRA |= (1 << ADSC);
+		_delay_ms(10);
+		
+		 if (UDR0 == 49) {
+			 PORTB = buffer_ADC;
+		 } else {
+			 PORTB = buffer_RX_B;
+		 }
+    }
+}
+
+void InitADC(void){
+	ADMUX = 0;
+	ADMUX |= (1 << REFS0);
+	ADMUX |= (1 << ADLAR);
+	
+	ADCSRA = 0;
+	ADCSRA |= (1 << ADEN);
+	ADCSRA |= (1 << ADIE);
+	
+	ADCSRA |= (1 << ADPS0) | (1 << ADPS1) | (1 << ADPS2);
+	
+	DIDR0 |= (1 << ADC0D);
+	
+}
+
+
+void InitUART9600(void){
+	//Confi TX y RX
+	DDRD &= ~(1 << DDD0);
+	DDRD |= (1 << DDD1);
+	
+	//Confi Registro A Modo Fast U2X0 = 1
+	UCSR0A = 0;
+	UCSR0A |= (1 << U2X0);
+	
+	//Confi Registro B habilitar ISR de RX, habilitamos RX y TX
+	UCSR0B = 0;
+	UCSR0B |= (1 << RXCIE0) | (1 << RXEN0) | (1 << TXEN0);
+	
+	//Confi Registro C > Frame: 8 bits No pariedad ! bit stop
+	UCSR0C = 0;
+	UCSR0C |= (1 << UCSZ00) | (1 << UCSZ01);
+	
+	//Baudrate 
+	UBRR0 = 207;
+}
+
+
+void witetextUART(char* texto){
+	uint8_t i;
+	for (i = 0; texto[i] != '\0'; i++){
+		while(!(UCSR0A & (1 << UDRE0)));
+		UDR0 = texto[i];
+	}
+}
+
+ISR(USART_RX_vect){
+	
+	bufferRX = UDR0;
+	buffer_RX_B = UDR0;
+	while(!(UCSR0A & (1 << UDRE0)));
+	UDR0 = bufferRX;
+	UDR0 = buffer_RX_B;
+	
+}
+
+ISR(ADC_vect){
+	
+	buffer_ADC = ADCH;
+	ADCSRA |= (1 << ADIF);
+	
+}
